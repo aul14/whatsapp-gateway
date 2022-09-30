@@ -5,6 +5,7 @@ const qrcode = require("qrcode");
 const socketIO = require("socket.io");
 const http = require("http");
 const fs = require("fs");
+const { phoneNumberFormatter } = require("./helpers/formatter");
 
 const app = express();
 const server = http.createServer(app);
@@ -27,6 +28,16 @@ const client = new Client({
   restartOnAuthFail: true,
   puppeteer: {
     headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process", // <- this one doesn't works in Windows
+      "--disable-gpu",
+    ],
   },
   authStrategy: new LocalAuth(),
 });
@@ -76,26 +87,54 @@ io.on("connection", function (socket) {
   });
 });
 
+// FUNGSI UNTUK MENGECEK NUMBER SUDAH TERDAFTAR DI WHATSAPP
+const checkRegisteredNumber = async function (number) {
+  const isRegistered = await client.isRegisteredUser(number);
+  return isRegistered;
+};
 // SEND MESSAGE
-app.post("/send-message", (req, res) => {
-  const number = req.body.number;
-  const message = req.body.message;
-
-  client
-    .sendMessage(number, message)
-    .then((response) => {
-      res.status(200).json({
-        status: true,
-        response: response,
-      });
-    })
-    .catch((err) => {
-      res.status(500).json({
-        status: false,
-        response: err,
-      });
+app.post(
+  "/send-message",
+  [body("number").notEmpty(), body("message").notEmpty()],
+  async (req, res) => {
+    const errors = validationResult(req).formatWith(({ msg }) => {
+      return msg;
     });
-});
+
+    if (!errors.isEmpty()) {
+      return res.status(500).json({
+        status: false,
+        message: errors.mapped(),
+      });
+    }
+    const number = phoneNumberFormatter(req.body.number);
+    const message = req.body.message;
+
+    const isRegisteredNumber = await checkRegisteredNumber(number);
+
+    if (!isRegisteredNumber) {
+      return res.status(500).json({
+        status: false,
+        message: "The number is not registered!",
+      });
+    }
+
+    client
+      .sendMessage(number, message)
+      .then((response) => {
+        res.status(200).json({
+          status: true,
+          response: response,
+        });
+      })
+      .catch((err) => {
+        res.status(500).json({
+          status: false,
+          response: err,
+        });
+      });
+  }
+);
 
 server.listen(8000, function () {
   console.log("App running on *: " + 8000);
