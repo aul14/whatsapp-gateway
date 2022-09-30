@@ -1,11 +1,14 @@
-const { Client, LocalAuth } = require("whatsapp-web.js");
+const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const express = require("express");
 const { body, validationResult } = require("express-validator");
+const fileUpload = require("express-fileupload");
 const qrcode = require("qrcode");
 const socketIO = require("socket.io");
 const http = require("http");
 const fs = require("fs");
+const axios = require("axios");
 const { phoneNumberFormatter } = require("./helpers/formatter");
+const { response } = require("express");
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +16,11 @@ const io = socketIO(server);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(
+  fileUpload({
+    debug: true,
+  })
+);
 
 const SESSION_FILE_PATH = "./whatsapp-session.json";
 
@@ -136,6 +144,53 @@ app.post(
   }
 );
 
+// SEND MEDIA
+app.post(
+  "/send-media",
+  [body("number").notEmpty(), body("message").notEmpty()],
+  async (req, res) => {
+    const number = phoneNumberFormatter(req.body.number);
+    const caption = req.body.caption;
+    const fileUrl = req.body.file;
+
+    // const media = MessageMedia.fromFilePath("./image-example.png");
+
+    // INI CONTOH UNTUK MENGIRIM FILE DARI LOCAL STORAGE
+    // const file = req.files.file;
+    // const media = new MessageMedia(
+    //   file.mimetype,
+    //   file.data.toString("base64"),
+    //   file.name
+    // );
+
+    // INI CONTOH KIRIM FILE DARI URL
+    let mimetype;
+    const attachment = await axios
+      .get(fileUrl, {
+        responseType: "arraybuffer",
+      })
+      .then((response) => {
+        mimetype = response.headers["content-type"];
+        return response.data.toString("base64");
+      });
+    const media = new MessageMedia(mimetype, attachment, "Media");
+
+    client
+      .sendMessage(number, media, { caption: caption })
+      .then((response) => {
+        res.status(200).json({
+          status: true,
+          response: response,
+        });
+      })
+      .catch((err) => {
+        res.status(500).json({
+          status: false,
+          response: err,
+        });
+      });
+  }
+);
 server.listen(8000, function () {
   console.log("App running on *: " + 8000);
 });
