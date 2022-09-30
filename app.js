@@ -1,5 +1,4 @@
 const { Client, LocalAuth } = require("whatsapp-web.js");
-const fs = require("fs");
 const express = require("express");
 const { body, validationResult } = require("express-validator");
 const qrcode = require("qrcode");
